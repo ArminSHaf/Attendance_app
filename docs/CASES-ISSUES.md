@@ -7,7 +7,7 @@ different attendance project with professors, QR sessions, absence requests and
 
 | CSV report | Result in this repository |
 |---|---|
-| Paper list import fails above 6 MB | Backend regression accepts an 11 MB image under its 15 MB per-image limit. A live upload through ngrok remains to be checked. |
+| Paper list import fails above 6 MB | Backend regression and a live 11 MB upload through ngrok both succeeded (HTTP 201). The temporary import was deleted (HTTP 204). The reported 6 MB failure was not reproducible on this deployment. |
 | Clear leaves search text; blur resets page | Search text follows the URL filter, Clear empties both, and unchanged blur does not reset pagination. |
 | CSV formula injection; repeated Admin & Analytics report | Formula-leading text is escaped in both CSV and XLSX exports. |
 | Rejected attendance counted present; repeated Admin & Analytics report | Absentees, dashboard event counts and summary turnout exclude rejected submissions. Status totals still show them. |
