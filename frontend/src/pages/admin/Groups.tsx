@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { api, json, type Group, type User } from '../../api'
+import { allPages, api, json, type Group, type User } from '../../api'
 import { ErrorNote, Modal } from '../../components'
 
 export default function Groups() {
@@ -11,7 +11,7 @@ export default function Groups() {
 
   const load = useCallback(() => {
     api<Group[]>('/admin/groups').then(setGroups).catch((e) => setError(e.message))
-    api<User[]>('/admin/users').then(setUsers).catch(() => {})
+    allPages<User>('/admin/users').then(setUsers).catch(() => {})
   }, [])
   useEffect(load, [load])
 

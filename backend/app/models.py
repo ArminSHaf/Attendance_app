@@ -62,6 +62,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     full_name: Mapped[str] = mapped_column(String(200))
     password_hash: Mapped[str] = mapped_column(String(200))
+    token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     role: Mapped[Role] = mapped_column(Enum(Role, name="user_role"), default=Role.user)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

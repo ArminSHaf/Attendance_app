@@ -14,22 +14,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const logout = useCallback(() => {
+  const clearSession = useCallback(() => {
     tokenStore.set(null)
     setUser(null)
   }, [])
+  const logout = useCallback(() => {
+    if (tokenStore.get()) api('/auth/logout', json('POST', {})).catch(() => {})
+    clearSession()
+  }, [clearSession])
 
   useEffect(() => {
-    setUnauthorizedHandler(logout)
+    setUnauthorizedHandler(clearSession)
     if (!tokenStore.get()) {
       setLoading(false)
       return
     }
     api<User>('/auth/me')
       .then(setUser)
-      .catch(logout)
+      .catch(clearSession)
       .finally(() => setLoading(false))
-  }, [logout])
+  }, [clearSession])
 
   const login = async (email: string, password: string) => {
     const res = await api<{ access_token: string; user: User }>('/auth/login', json('POST', { email, password }))

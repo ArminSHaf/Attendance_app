@@ -97,6 +97,7 @@ def test_import_review_commit(client, admin, roster, monkeypatch):
     assert status["3) Unknown Person"][0] == "unmatched"
     assert client.get(f"/api/admin/ocr/imports/{imp['id']}/images/0", headers=admin).status_code == 200
 
+
     # admin adds STANCIU manually (no line) on top of the two matches
     entries = [{"user_id": roster["POPOVICI"], "line_index": 1},
                {"user_id": roster["DRAGOMIR"], "line_index": 2},
@@ -116,6 +117,15 @@ def test_import_review_commit(client, admin, roster, monkeypatch):
     assert {line["status"] for line in r.json()["lines"] if line["user_id"]} == {"already_present"}
     briefs = client.get("/api/admin/ocr/imports", headers=admin, params={"event_id": ev["id"]}).json()
     assert [b["created_attendances"] for b in briefs] == [0, 3]
+
+
+def test_import_accepts_image_over_six_mb(client, admin, monkeypatch):
+    monkeypatch.setitem(engines.ENGINES, "tesseract", lambda data: ["1) Sample Student"])
+    # A PNG with trailing metadata exercises the multipart limit without expensive OCR.
+    photo = png_bytes() + b"x" * (11 * 1024 * 1024)
+    response = client.post("/api/admin/ocr/imports", headers=admin,
+                           files=[("files", ("large.png", photo, "image/png"))])
+    assert response.status_code == 201, response.text
 
 
 def test_import_without_event_detects_date_and_lets_admin_choose(client, admin, roster, monkeypatch):

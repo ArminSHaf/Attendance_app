@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
-  api, browserTz, describeSeries, download, fmt, json, qs, WEEKDAYS,
+  allPages, api, browserTz, describeSeries, download, fmt, json, qs, WEEKDAYS,
   type Attendance, type AttendancePage, type AttendanceStatus, type AttendanceSummary, type EventItem, type Granularity,
   type Group, type User,
 } from '../../api'
@@ -54,8 +54,12 @@ export default function Attendances() {
   const [showCharts, setShowCharts] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const query = params.get('q') ?? ''
+  const [search, setSearch] = useState(query)
   const page = Number(params.get('page') ?? 1)
   const granularity = (params.get('by') ?? 'week') as Granularity
+
+  useEffect(() => setSearch(query), [query])
 
   const filters = Object.fromEntries(
     FILTER_KEYS.map((k) => [
@@ -82,8 +86,8 @@ export default function Attendances() {
     return () => { cancelled = true }
   }, [summaryQs, showCharts, data])
   useEffect(() => {
-    api<EventItem[]>('/events?scope=all').then(setEvents).catch(() => {})
-    api<User[]>('/admin/users').then(setUsers).catch(() => {})
+    allPages<EventItem>('/events?scope=all').then(setEvents).catch(() => {})
+    allPages<User>('/admin/users').then(setUsers).catch(() => {})
     api<Group[]>('/admin/groups').then(setGroups).catch(() => {})
   }, [])
 
@@ -95,7 +99,9 @@ export default function Attendances() {
     if (!('page' in values)) next.delete('page')
     setParams(next)
   }
-  const setFilter = (key: string, value: string) => setFilters({ [key]: value })
+  const setFilter = (key: string, value: string) => {
+    if ((params.get(key) ?? '') !== value) setFilters({ [key]: value })
+  }
 
   // one entry per recurring series, named after its first occurrence
   const seriesOptions = [...new Map(
@@ -141,9 +147,10 @@ export default function Attendances() {
       </div>
 
       <div className="card filters">
-        <input placeholder="Search name, email, event…" defaultValue={params.get('q') ?? ''}
-          onKeyDown={(e) => e.key === 'Enter' && setFilter('q', e.currentTarget.value)}
-          onBlur={(e) => setFilter('q', e.target.value)} />
+        <input placeholder="Search name, email, event…" value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && setFilter('q', search)}
+          onBlur={() => setFilter('q', search)} />
         <select value={params.get('event_id') ?? ''} onChange={(e) => setFilter('event_id', e.target.value)}>
           <option value="">All events</option>
           {events.map((e) => <option key={e.id} value={e.id}>{e.title} ({fmt(e.starts_at)})</option>)}
@@ -196,7 +203,7 @@ export default function Attendances() {
           <option value="event">Event A–Z</option>
           <option value="status">Status</option>
         </select>
-        <button className="link" onClick={() => setParams(new URLSearchParams())}>Clear</button>
+        <button className="link" onClick={() => { setSearch(''); setParams(new URLSearchParams()) }}>Clear</button>
         <div className="filter-presets">
           <div className="seg" role="group" aria-label="Event date range">
             {DATE_PRESETS.map((p) => (

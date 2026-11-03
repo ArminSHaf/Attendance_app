@@ -27,13 +27,17 @@ Deployment using GitHub Pages for the frontend and ngrok on a Windows PC for the
 
 ## Quick start (Docker)
 
+Copy `.env.example` to `.env` and set every blank password/secret. Set `DATABASE_URL` to
+`postgresql+psycopg://attendance:<POSTGRES_PASSWORD>@postgres:5432/attendance`
+(URL-encode special characters in the password). The local services bind to `127.0.0.1`.
+
 ```bash
 docker compose up -d                    # postgres, prometheus, grafana
 docker compose --profile app up -d      # + backend (8000) and frontend (8080)
 ```
 
-- App: http://localhost:8080 (admin: `admin@example.com` / `admin12345`)
-- Grafana: http://localhost:3000 (`admin` / `admin`), folder **Attendance**
+- App: http://localhost:8080 (admin email and password from `.env`)
+- Grafana: http://localhost:3000 (`admin` / `GRAFANA_ADMIN_PASSWORD` from `.env`), folder **Attendance**
 - Prometheus: http://localhost:9090
 
 ## Local development (Windows, venv)

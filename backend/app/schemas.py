@@ -14,6 +14,13 @@ class LoginIn(BaseModel):
     email: EmailStr
     password: str
 
+    @field_validator("password")
+    @classmethod
+    def password_limit(cls, value: str) -> str:
+        if len(value.encode("utf-8")) > 72:
+            raise ValueError("Password must be at most 72 UTF-8 bytes")
+        return value
+
 
 class TokenOut(BaseModel):
     access_token: str
@@ -26,10 +33,24 @@ class RegisterIn(BaseModel):
     full_name: str = Field(min_length=1, max_length=200)
     password: str = Field(min_length=8, max_length=128)
 
+    @field_validator("password")
+    @classmethod
+    def password_limit(cls, value: str) -> str:
+        if len(value.encode("utf-8")) > 72:
+            raise ValueError("Password must be at most 72 UTF-8 bytes")
+        return value
+
 
 class ChangePasswordIn(BaseModel):
     current_password: str
     new_password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def password_limit(cls, value: str) -> str:
+        if len(value.encode("utf-8")) > 72:
+            raise ValueError("Password must be at most 72 UTF-8 bytes")
+        return value
 
 
 class UserOut(ORM):
@@ -51,6 +72,13 @@ class UserUpdate(BaseModel):
     role: Role | None = None
     is_active: bool | None = None
     password: str | None = Field(default=None, min_length=8, max_length=128)
+
+    @field_validator("password")
+    @classmethod
+    def password_limit(cls, value: str | None) -> str | None:
+        if value is not None and len(value.encode("utf-8")) > 72:
+            raise ValueError("Password must be at most 72 UTF-8 bytes")
+        return value
 
 
 # --- groups -----------------------------------------------------------------

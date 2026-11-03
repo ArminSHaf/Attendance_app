@@ -86,10 +86,12 @@ def list_events(
     user: CurrentUser,
     db: DB,
     scope: str = Query("relevant", pattern="^(relevant|all)$"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(200, ge=1, le=200),
 ):
     """Users see events for their groups whose check-in hasn't closed more than a week ago
     and that open within 60 days; admins can request all."""
-    stmt = select(Event).order_by(Event.starts_at.desc())
+    stmt = select(Event).order_by(Event.starts_at.desc(), Event.id.desc())
     if user.role != Role.admin:
         stmt = stmt.where(visible_to(user))
     if scope == "relevant" or user.role != Role.admin:
@@ -97,10 +99,11 @@ def list_events(
             Event.check_in_closes_at >= now_utc() - timedelta(days=7),
             Event.check_in_opens_at <= now_utc() + timedelta(days=60),
         )
-    events = db.scalars(stmt).all()
+    events = db.scalars(stmt.offset((page - 1) * page_size).limit(page_size)).all()
     mine = {
         a.event_id: a.status
-        for a in db.scalars(select(Attendance).where(Attendance.user_id == user.id))
+        for a in db.scalars(select(Attendance).where(
+            Attendance.user_id == user.id, Attendance.event_id.in_([e.id for e in events])))
     }
     return [_user_view(e, mine.get(e.id)) for e in events]
 

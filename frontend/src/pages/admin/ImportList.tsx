@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type DragEvent, type FormEvent } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
-  api, browserTz, fmt, json, qs,
+  allPages, api, browserTz, fmt, json, qs,
   type EventItem, type OcrImport, type OcrImportBrief, type OcrLine, type OcrStatus, type User,
 } from '../../api'
 import { AuthImage, ErrorNote, Modal } from '../../components'
@@ -31,7 +31,7 @@ function Upload() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    api<EventItem[]>('/events?scope=all').then(setEvents).catch(() => {})
+    allPages<EventItem>('/events?scope=all').then(setEvents).catch(() => {})
     api<Record<string, boolean>>('/admin/ocr/engines').then(setEngines).catch(() => {})
     api<OcrImportBrief[]>('/admin/ocr/imports').then(setRecent).catch(() => {})
   }, [])
@@ -251,7 +251,7 @@ function Review({ importId }: { importId: number }) {
 
   useEffect(() => {
     api<OcrImport>(`/admin/ocr/imports/${importId}${qs({ tz: browserTz() })}`).then(apply).catch((e) => setError(e.message))
-    api<User[]>('/admin/users?include_inactive=false').then((u) => setUsers(u.filter((x) => x.role === 'user')))
+    allPages<User>('/admin/users?include_inactive=false').then((u) => setUsers(u.filter((x) => x.role === 'user')))
       .catch(() => {})
   }, [importId, apply])
 

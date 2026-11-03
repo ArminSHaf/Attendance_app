@@ -37,14 +37,15 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 # --- users -----------------------------------------------------------------
 @router.get("/users", response_model=list[UserOut])
-def list_users(_: AdminUser, db: DB, q: str | None = None, include_inactive: bool = True):
-    stmt = select(User).order_by(User.full_name)
+def list_users(_: AdminUser, db: DB, q: str | None = None, include_inactive: bool = True,
+               page: int = Query(1, ge=1), page_size: int = Query(200, ge=1, le=200)):
+    stmt = select(User).order_by(User.full_name, User.id)
     if q:
         like = f"%{q.lower()}%"
         stmt = stmt.where(or_(func.lower(User.full_name).like(like), func.lower(User.email).like(like)))
     if not include_inactive:
         stmt = stmt.where(User.is_active.is_(True))
-    return db.scalars(stmt).all()
+    return db.scalars(stmt.offset((page - 1) * page_size).limit(page_size)).all()
 
 
 @router.post("/users", response_model=UserOut, status_code=201)
@@ -70,6 +71,7 @@ def update_user(user_id: int, body: UserUpdate, admin: AdminUser, db: DB):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "You cannot demote or deactivate yourself")
     if (pw := data.pop("password", None)) is not None:
         user.password_hash = hash_password(pw)
+        user.token_version += 1
     for k, v in data.items():
         if v is not None:
             setattr(user, k, v)
@@ -154,6 +156,9 @@ class AttendanceFilters:
         q: str | None = None,
         sort: str = Query("-submitted_at", pattern="^-?(submitted_at|user|event|status)$"),
     ):
+        if any(value is not None and value.tzinfo is None for value in (date_from, date_to)):
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                "Date filters must include a timezone offset")
         self.event_id, self.user_id, self.status, self.is_late = event_id, user_id, status_, is_late
         self.group_id, self.source, self.series_id = group_id, source, series_id
         self.date_from, self.date_to, self.q, self.sort = date_from, date_to, q, sort
@@ -176,9 +181,9 @@ class AttendanceFilters:
             stmt = stmt.where(Event.series_id == self.series_id)
         # Dates refer to when the event took place: list imports are submitted later.
         if self.date_from:
-            stmt = stmt.where(Event.starts_at >= self.date_from)
+            stmt = stmt.where(Event.starts_at >= as_utc(self.date_from))
         if self.date_to:
-            stmt = stmt.where(Event.starts_at <= self.date_to)
+            stmt = stmt.where(Event.starts_at <= as_utc(self.date_to))
         if self.q:
             like = f"%{self.q.lower()}%"
             stmt = stmt.where(
@@ -242,17 +247,24 @@ def attendance_summary(
 
     # Aggregate on plain columns (selecting the Event entity would drag its eager joins into GROUP BY).
     per_event_rows = db.execute(
-        select(Event.id, func.count(rows.c.id),
+        select(Event.id, func.sum(case((rows.c.status != AttendanceStatus.rejected, 1), else_=0)),
                func.sum(case((rows.c.status == AttendanceStatus.approved, 1), else_=0)),
                func.sum(case((rows.c.source == "ocr", 1), else_=0)))
         .join(rows, rows.c.event_id == Event.id)
         .group_by(Event.id, Event.starts_at).order_by(Event.starts_at.desc()).limit(40)
     ).all()
     events = {e.id: e for e in db.scalars(select(Event).where(Event.id.in_([r[0] for r in per_event_rows])))}
+    active_memberships = db.execute(
+        select(User.id, group_members.c.group_id).outerjoin(group_members, group_members.c.user_id == User.id)
+        .where(User.is_active.is_(True), User.role == Role.user)
+    ).all()
+    expected_counts = {e.id: len({uid for uid, gid in active_memberships
+                                   if not e.groups or gid in {g.id for g in e.groups}})
+                       for e in events.values()}
     per_event = [
         {"event_id": eid, "title": events[eid].title, "starts_at": as_utc(events[eid].starts_at), "count": n,
          "approved": int(appr or 0), "from_lists": int(ocr or 0),
-         "expected": db.scalar(select(func.count()).select_from(expected_users(events[eid]).subquery())) or 0}
+         "expected": expected_counts[eid]}
         for eid, n, appr, ocr in reversed(per_event_rows)
     ]
     per_group = [
@@ -326,6 +338,12 @@ def _export_rows(atts: list[Attendance]):
         ]
 
 
+def _safe_spreadsheet_row(row):
+    """Treat user-controlled text as data in CSV and spreadsheet programs."""
+    return ["'" + value if isinstance(value, str) and value.lstrip().startswith(("=", "+", "-", "@"))
+            else value for value in row]
+
+
 @router.get("/attendances/export")
 def export_attendances(_: AdminUser, db: DB, f: Filters, format: str = Query("csv", pattern="^(csv|xlsx)$")):
     stmt = f.order(f.apply(select(Attendance))).options(
@@ -339,7 +357,7 @@ def export_attendances(_: AdminUser, db: DB, f: Filters, format: str = Query("cs
         buf.write("﻿")  # BOM so Excel detects UTF-8
         writer = csv.writer(buf)
         writer.writerow(EXPORT_COLUMNS)
-        writer.writerows(_export_rows(atts))
+        writer.writerows(_safe_spreadsheet_row(row) for row in _export_rows(atts))
         return StreamingResponse(
             iter([buf.getvalue()]),
             media_type="text/csv; charset=utf-8",
@@ -351,7 +369,7 @@ def export_attendances(_: AdminUser, db: DB, f: Filters, format: str = Query("cs
     ws.title = "Attendances"
     ws.append(EXPORT_COLUMNS)
     for row in _export_rows(atts):
-        ws.append(row)
+        ws.append(_safe_spreadsheet_row(row))
     ws.freeze_panes = "A2"
     for col, width in zip("ABCDEFGHIJKL", [6, 30, 18, 24, 30, 20, 6, 10, 14, 50, 24, 30]):
         ws.column_dimensions[col].width = width
@@ -381,7 +399,7 @@ def stats(_: AdminUser, db: DB):
     recent = db.scalars(select(Event).order_by(Event.starts_at.desc()).limit(8)).all()
     counts = dict(db.execute(
         select(Attendance.event_id, func.count())
-        .where(Attendance.event_id.in_([e.id for e in recent]))
+        .where(Attendance.event_id.in_([e.id for e in recent]), Attendance.status != AttendanceStatus.rejected)
         .group_by(Attendance.event_id)
     ).all())
     return StatsOut(
@@ -406,6 +424,7 @@ def stats(_: AdminUser, db: DB):
 @router.get("/events/{event_id}/absentees", response_model=list[UserOut])
 def absentees(event_id: int, _: AdminUser, db: DB):
     event = get_event_or_404(db, event_id)
-    present = select(Attendance.user_id).where(Attendance.event_id == event_id)
+    present = select(Attendance.user_id).where(
+        Attendance.event_id == event_id, Attendance.status != AttendanceStatus.rejected)
     stmt = expected_users(event).where(User.id.not_in(present)).order_by(User.full_name)
     return db.scalars(stmt).all()

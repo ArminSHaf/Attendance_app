@@ -4,7 +4,7 @@ import { useAuth } from '../auth'
 import { ErrorNote } from '../components'
 
 export default function Account() {
-  const { user } = useAuth()
+  const { user, logout } = useAuth()
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -18,6 +18,7 @@ export default function Account() {
     setError(null)
     try {
       await api('/auth/change-password', json('POST', { current_password: current, new_password: next }))
+      logout()
       setDone(true)
       setCurrent(''); setNext(''); setConfirm('')
     } catch (err) {

@@ -11,7 +11,7 @@ Aggregation is done in Python so it behaves the same on SQLite and Postgres.
 from collections import defaultdict
 from datetime import date, timedelta
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.models import Attendance, AttendanceStatus, Event, Role, User
@@ -76,22 +76,21 @@ def rates(db, f, series_id: int | None) -> dict:
     if series_id:
         ev_stmt = ev_stmt.where(Event.series_id == series_id)
     if f.date_from:
-        ev_stmt = ev_stmt.where(Event.starts_at >= f.date_from)
+        ev_stmt = ev_stmt.where(Event.starts_at >= as_utc(f.date_from))
     if f.date_to:
-        ev_stmt = ev_stmt.where(Event.starts_at <= f.date_to)
+        ev_stmt = ev_stmt.where(Event.starts_at <= as_utc(f.date_to))
     events = db.scalars(ev_stmt.order_by(Event.starts_at.desc()).limit(MAX_EVENTS)).all()
 
     st_stmt = (select(User).options(selectinload(User.groups))
                .where(User.is_active.is_(True), User.role == Role.user))
     if f.user_id:
         st_stmt = st_stmt.where(User.id == f.user_id)
-    if f.q:
-        like = f"%{f.q.lower()}%"
-        st_stmt = st_stmt.where(or_(func.lower(User.full_name).like(like), func.lower(User.email).like(like)))
     students = db.scalars(st_stmt).all()
     if f.group_id:
         students = [u for u in students if any(g.id == f.group_id for g in u.groups)]
     user_groups = {u.id: {g.id for g in u.groups} for u in students}
+    query = f.q.lower() if f.q else None
+    matching_students = {u.id for u in students if query and (query in u.full_name.lower() or query in u.email.lower())}
     group_names = {g.id: g.name for u in students for g in u.groups}
 
     present = set(db.execute(
@@ -108,7 +107,9 @@ def rates(db, f, series_id: int | None) -> dict:
     turnouts = []
     for e in events:
         audience = {g.id for g in e.groups}
-        exp = [uid for uid, gs in user_groups.items() if not audience or gs & audience]
+        exp = [uid for uid, gs in user_groups.items()
+               if (not audience or gs & audience)
+               and (query is None or query in e.title.lower() or uid in matching_students)]
         if not exp:
             continue
         here = sum((e.id, uid) in present for uid in exp)

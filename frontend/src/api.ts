@@ -228,6 +228,15 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   return res.json() as Promise<T>
 }
 
+export async function allPages<T>(path: string): Promise<T[]> {
+  const items: T[] = []
+  for (let page = 1; ; page++) {
+    const batch = await api<T[]>(`${path}${path.includes('?') ? '&' : '?'}page=${page}&page_size=200`)
+    items.push(...batch)
+    if (batch.length < 200) return items
+  }
+}
+
 export const json = (method: string, body: unknown): RequestInit => ({ method, body: JSON.stringify(body) })
 
 export function qs(params: Record<string, string | number | boolean | undefined | null>): string {
