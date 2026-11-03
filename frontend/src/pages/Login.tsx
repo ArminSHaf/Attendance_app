@@ -1,11 +1,12 @@
 import { useState, type FormEvent } from 'react'
-import { Navigate, useNavigate } from 'react-router-dom'
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth'
 import { ErrorNote } from '../components'
 
 export default function Login() {
   const { user, login } = useAuth()
   const navigate = useNavigate()
+  const [params] = useSearchParams()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -32,6 +33,8 @@ export default function Login() {
       <form className="card login" onSubmit={submit}>
         <h1>✓ Attendance</h1>
         <p className="muted">Sign in with the account your administrator enrolled.</p>
+        {params.get('password_changed') === '1' &&
+          <div className="success">Password updated. Sign in with your new password.</div>}
         <label>
           Email
           <input type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} />

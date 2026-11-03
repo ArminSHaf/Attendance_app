@@ -68,6 +68,9 @@ def test_password_byte_limit_and_token_revocation(client, admin, user):
     assert r.status_code == 422
     assert client.post("/api/auth/login", json={
         "email": "jane@test.io", "password": long_password}).status_code == 422
+    assert client.post("/api/admin/users", headers=admin, json={
+        "email": "unicode@test.io", "full_name": "Unicode",
+        "password": "é" * 37}).status_code == 422  # 74 UTF-8 bytes
 
     changed = client.post("/api/auth/change-password", headers=user, json={
         "current_password": "janepass123", "new_password": "newpass123"})
@@ -242,6 +245,21 @@ def test_deactivated_user_cannot_login(client, admin, user):
     assert client.get("/api/auth/me", headers=user).status_code == 401
     r = client.post("/api/auth/login", json={"email": "jane@test.io", "password": "janepass123"})
     assert r.status_code == 403
+
+
+def test_status_and_role_changes_revoke_existing_tokens(client, admin, user):
+    uid = client.get("/api/auth/me", headers=user).json()["id"]
+    assert client.patch(f"/api/admin/users/{uid}", headers=admin,
+                        json={"is_active": False}).status_code == 200
+    assert client.patch(f"/api/admin/users/{uid}", headers=admin,
+                        json={"is_active": True}).status_code == 200
+    assert client.get("/api/auth/me", headers=user).status_code == 401
+    fresh = auth_headers(client, "jane@test.io", "janepass123")
+    assert client.patch(f"/api/admin/users/{uid}", headers=admin,
+                        json={"role": "admin"}).status_code == 200
+    assert client.get("/api/auth/me", headers=fresh).status_code == 401
+    assert client.get("/api/auth/me", headers=auth_headers(
+        client, "jane@test.io", "janepass123")).json()["role"] == "admin"
 
 
 def test_admin_cannot_deactivate_self(client, admin):

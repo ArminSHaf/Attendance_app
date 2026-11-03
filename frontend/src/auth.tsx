@@ -5,7 +5,7 @@ interface AuthState {
   user: User | null
   loading: boolean
   login: (email: string, password: string) => Promise<User>
-  logout: () => void
+  logout: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthState | null>(null)
@@ -18,9 +18,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     tokenStore.set(null)
     setUser(null)
   }, [])
-  const logout = useCallback(() => {
-    if (tokenStore.get()) api('/auth/logout', json('POST', {})).catch(() => {})
-    clearSession()
+  const logout = useCallback(async () => {
+    try {
+      if (tokenStore.get()) await api('/auth/logout', { method: 'POST', keepalive: true })
+    } catch {
+      // A lost connection still signs this browser out; the token will expire on the server.
+    } finally {
+      clearSession()
+    }
   }, [clearSession])
 
   useEffect(() => {

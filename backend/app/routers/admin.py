@@ -69,12 +69,17 @@ def update_user(user_id: int, body: UserUpdate, admin: AdminUser, db: DB):
     data = body.model_dump(exclude_unset=True)
     if user.id == admin.id and (data.get("is_active") is False or data.get("role") == Role.user):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "You cannot demote or deactivate yourself")
+    revoke_tokens = False
     if (pw := data.pop("password", None)) is not None:
         user.password_hash = hash_password(pw)
-        user.token_version += 1
+        revoke_tokens = True
     for k, v in data.items():
         if v is not None:
+            if k in ("role", "is_active") and v != getattr(user, k):
+                revoke_tokens = True
             setattr(user, k, v)
+    if revoke_tokens:
+        user.token_version += 1
     db.commit()
     return user
 

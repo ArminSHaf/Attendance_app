@@ -1,6 +1,7 @@
 """OCR import pipeline. Names are fictional; the noisy lines imitate real Tesseract output on
 handwriting (swapped letters, split/merged words, garbled numbering and group codes)."""
 import io
+import random
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -126,6 +127,23 @@ def test_import_accepts_image_over_six_mb(client, admin, monkeypatch):
     response = client.post("/api/admin/ocr/imports", headers=admin,
                            files=[("files", ("large.png", photo, "image/png"))])
     assert response.status_code == 201, response.text
+
+
+def test_import_decodes_and_stores_real_large_photo(client, admin, monkeypatch):
+    monkeypatch.setitem(engines.ENGINES, "tesseract", lambda data: ["1) Sample Student"])
+    pixels = random.Random(0).randbytes(3500 * 3000 * 3)
+    image = Image.frombytes("RGB", (3500, 3000), pixels)
+    output = io.BytesIO()
+    image.save(output, "JPEG", quality=95)
+    photo = output.getvalue()
+    assert 10 * 1024 * 1024 < len(photo) < 15 * 1024 * 1024
+    response = client.post("/api/admin/ocr/imports", headers=admin,
+                           files=[("files", ("real-large.jpg", photo, "image/jpeg"))])
+    assert response.status_code == 201, response.text
+    import_id = response.json()["id"]
+    stored = client.get(f"/api/admin/ocr/imports/{import_id}/images/0", headers=admin)
+    assert stored.status_code == 200
+    assert len(stored.content) < len(photo)
 
 
 def test_import_without_event_detects_date_and_lets_admin_choose(client, admin, roster, monkeypatch):
